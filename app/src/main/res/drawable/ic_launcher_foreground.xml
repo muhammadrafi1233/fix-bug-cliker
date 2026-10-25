@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Logo RAFI HAYDAY (viewBox 64x64 diperkecil ke zona aman launcher dan dipusatkan) -->
+    <group
+        android:scaleX="0.8667"
+        android:scaleY="0.8667"
+        android:translateX="26.27"
+        android:translateY="26.27">
+        <!-- lingkaran krem + bingkai hijau -->
+        <path
+            android:fillColor="#FFF6DA"
+            android:strokeColor="#37872A"
+            android:strokeWidth="4"
+            android:pathData="M2,32 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0 Z" />
+        <!-- batang -->
+        <path
+            android:strokeColor="#25601C"
+            android:strokeWidth="3.5"
+            android:strokeLineCap="round"
+            android:pathData="M32,53 L32,24" />
+        <!-- bulir gandum -->
+        <path
+            android:fillColor="#F5C637"
+            android:strokeColor="#C9971A"
+            android:strokeWidth="1.2"
+            android:pathData="M28,15 a4,7 0 1,0 8,0 a4,7 0 1,0 -8,0 Z" />
+        <group android:rotation="-35" android:pivotX="24.5" android:pivotY="24">
+            <path
+                android:fillColor="#F5C637"
+                android:strokeColor="#C9971A"
+                android:strokeWidth="1.2"
+                android:pathData="M20.5,24 a4,7 0 1,0 8,0 a4,7 0 1,0 -8,0 Z" />
+        </group>
+        <group android:rotation="35" android:pivotX="39.5" android:pivotY="24">
+            <path
+                android:fillColor="#F5C637"
+                android:strokeColor="#C9971A"
+                android:strokeWidth="1.2"
+                android:pathData="M35.5,24 a4,7 0 1,0 8,0 a4,7 0 1,0 -8,0 Z" />
+        </group>
+        <group android:rotation="-35" android:pivotX="25" android:pivotY="34">
+            <path
+                android:fillColor="#F5C637"
+                android:strokeColor="#C9971A"
+                android:strokeWidth="1.2"
+                android:pathData="M21,34 a4,7 0 1,0 8,0 a4,7 0 1,0 -8,0 Z" />
+        </group>
+        <group android:rotation="35" android:pivotX="39" android:pivotY="34">
+            <path
+                android:fillColor="#F5C637"
+                android:strokeColor="#C9971A"
+                android:strokeWidth="1.2"
+                android:pathData="M35,34 a4,7 0 1,0 8,0 a4,7 0 1,0 -8,0 Z" />
+        </group>
+    </group>
+</vector>

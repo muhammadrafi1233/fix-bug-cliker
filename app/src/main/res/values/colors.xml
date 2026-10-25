@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Palet RAFI HAYDAY -->
+    <color name="rh_cream">#FFF6DA</color>
+    <color name="rh_green">#37872A</color>
+    <color name="rh_green_dark">#25601C</color>
+    <color name="rh_green_pastel">#B4DB8C</color>
+    <color name="rh_yellow">#F5C637</color>
+    <color name="rh_ink">#2A3B24</color>
+    <color name="rh_leaf">#1E4A18</color>
+    <color name="rh_meadow">#8FCB5B</color>
+    <color name="rh_sky">#8FD3F0</color>
+    <color name="rh_sky_mid">#D9F1E4</color>
+</resources>

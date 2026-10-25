@@ -1,0 +1,11 @@
+# Contoh script buatan sendiri (Notepad). Simpan sebagai .txt lalu "Tambah script dari file".
+# Baris pengaturan (semua opsional):
+nama: Contoh klik 3 titik
+putaran: 5
+jeda: 100
+layar: 2560x1440
+
+# Satu klik per baris: x,y,jeda  (jeda dalam milidetik, boleh dikosongkan = pakai "jeda" di atas)
+939,579,300
+924,610
+1023,398,50
