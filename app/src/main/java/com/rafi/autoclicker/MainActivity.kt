@@ -315,7 +315,7 @@ class MainActivity : Activity() {
 
         val cMatch = card()
         cMatch.addView(text("Pencocokan & putaran", 15f, Palette.ink, true))
-        fFloor = formField("Batas minimal kemiripan", "Antara 0.50 dan 0.95. Naikkan bila sering salah klik, turunkan bila gambar tidak ketemu.", p.getString("floor", "0.70")!!, true, 0x5A12)
+        fFloor = formField("Kemiripan bawaan", "Hanya dipakai untuk langkah yang tidak punya nilai kemiripan sendiri. Nilai tiap gambar diatur di Atur langkah (Tingkat kemiripan).", p.getString("floor", "0.70")!!, true, 0x5A12)
         fLoops = formField("Jumlah putaran", "0 = berulang terus sampai dihentikan. Hanya dipakai untuk script yang belum diatur di kartu Pengulangan (tab Script).", p.getString("loops", "0")!!, false, 0x5A13)
         fTimeout = formField("Timeout langkah 'Repeat' (detik)", "0 = menunggu tanpa batas.", p.getString("timeout", "0")!!, false, 0x5A14)
         cMatch.addView(fFloor.container); cMatch.addView(fLoops.container); cMatch.addView(fTimeout.container)

@@ -15,7 +15,7 @@ import kotlin.math.min
 data class Cfg(
     val refW: Int = 2400,      // lebar layar saat script direkam
     val refH: Int = 1080,      // tinggi layar saat script direkam
-    val floor: Double = 0.70,  // batas bawah kemiripan (script punya nilai "similar" rendah, mis. 10-28)
+    val floor: Double = 0.70,  // kemiripan bawaan, hanya untuk langkah yang tidak punya nilai "similar" sendiri
     val loops: Int = 0,        // 0 = ulang terus sampai Stop
     val timeoutSec: Int = 0,   // 0 = tunggu tanpa batas pada langkah "Repeat"
     val clickMs: Int = 300,    // durasi total per klik (tap + tunda); 0 = ikut tunda di script
@@ -252,7 +252,10 @@ class ScriptEngine(
         }
         curW = frame.cols().toDouble(); curH = frame.rows().toDouble()
         val sx = curW / cfg.refW; val sy = curH / cfg.refH
-        val threshold = max(a.optInt("similar", 85) / 100.0, cfg.floor)
+        // Tiap gambar memakai tingkat kemiripannya sendiri (kolom "similar" di langkah). Batas bawaan dari Pengaturan
+        // hanya dipakai bila langkah tidak punya nilai sendiri.
+        val own = a.optInt("similar", -1)
+        val threshold = if (own >= 0) max(own, 1) / 100.0 else cfg.floor
         lastNeed = threshold
 
         // Area pencarian dari "rect" (+ margin kecil)
