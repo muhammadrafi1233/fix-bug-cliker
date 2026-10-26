@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 
@@ -29,9 +30,9 @@ class TapMarker(private val ctx: Context) {
         gravity = Gravity.TOP or Gravity.START
         if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
-    private val hideRunnable = Runnable { hideView() }
+    private val hideRunnable = Runnable { view?.visibility = View.INVISIBLE }
 
-    /** Harus dipanggil di main thread. Tampil 250 ms (lebih singkat dari durasi klik default 300 ms). */
+    /** Harus dipanggil di main thread. Tampil 250 ms, lalu hanya disembunyikan (jendela tetap ada, tidak dibuat ulang tiap klik). */
     fun show(x: Float, y: Float, number: Int) {
         main.removeCallbacks(hideRunnable)
         val v = view ?: TextView(ctx).apply {
@@ -42,6 +43,7 @@ class TapMarker(private val ctx: Context) {
         }.also { view = it; lp.x = (x - size / 2).toInt(); lp.y = (y - size / 2).toInt(); try { wm.addView(it, lp) } catch (_: Exception) {} }
         v.text = number.toString()
         lp.x = (x - size / 2).toInt(); lp.y = (y - size / 2).toInt()
+        v.visibility = View.VISIBLE
         try { wm.updateViewLayout(v, lp) } catch (_: Exception) {}
         main.postDelayed(hideRunnable, 250)
     }
@@ -51,5 +53,6 @@ class TapMarker(private val ctx: Context) {
         view = null
     }
 
+    /** Hapus jendela sepenuhnya (dipanggil saat stop / marker dimatikan). */
     fun hide() { main.removeCallbacks(hideRunnable); hideView() }
 }
