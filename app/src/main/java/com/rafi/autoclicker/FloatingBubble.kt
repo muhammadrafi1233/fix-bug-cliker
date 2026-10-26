@@ -40,6 +40,9 @@ class FloatingBubble(
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private var box: LinearLayout? = null
     private val plays = arrayOfNulls<ImageView>(3)
+    /** Status jalan/tidaknya tiap slot, dilacak di sini (bukan cuma lewat ikon) supaya bindPlay bisa langsung
+     *  mengecek tanpa menunggu callback Handler yang bisa telat saat thread utama sibuk. */
+    private val runningState = BooleanArray(3)
     private var panel: ScrollView? = null
     private val extras = ArrayList<View>()
     private var expanded = true
@@ -98,23 +101,40 @@ class FloatingBubble(
         return wrap
     }
 
-    /** Ketuk singkat = toggle start/stop slot [n]; tahan ~450ms = buka daftar pilih script untuk slot itu. */
+    /** Ketuk singkat = toggle start/stop slot [n]; tahan ~450ms = buka daftar pilih script untuk slot itu
+     *  (hanya berlaku saat belum jalan — saat sedang jalan, satu sentuhan = stop, langsung, tanpa syarat). */
     private fun bindPlay(iv: ImageView, n: Int) {
-        var longPressed = false
-        val lpRunnable = Runnable { longPressed = true; togglePanel(n) }
+        val longPressMs = android.view.ViewConfiguration.getLongPressTimeout().toLong().coerceAtLeast(450L)
+        var longPressFired = false
+        var stoppedOnDown = false
+        val lpRunnable = Runnable { longPressFired = true; togglePanel(n) }
         iv.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    longPressed = false
+                    longPressFired = false
+                    stoppedOnDown = false
                     // Umpan balik instan: tombol mengecil + getar ringan begitu disentuh.
                     iv.animate().cancel(); iv.animate().scaleX(0.86f).scaleY(0.86f).setDuration(50).start()
                     iv.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    main.postDelayed(lpRunnable, 450L)
+                    if (runningState[n]) {
+                        // Sedang jalan: stop langsung saat disentuh. Tidak menunggu lepas jari atau timer apa pun,
+                        // supaya tombol Stop selalu responsif walau thread utama lagi sibuk menjalankan script.
+                        stoppedOnDown = true
+                        onToggle(n)
+                    } else {
+                        main.postDelayed(lpRunnable, longPressMs)
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
                     main.removeCallbacks(lpRunnable)
                     iv.animate().cancel(); iv.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
-                    if (!longPressed) onToggle(n)
+                    if (!stoppedOnDown && !longPressFired) {
+                        // Pakai durasi sentuhan ASLI dari sistem input (eventTime - downTime), bukan urutan
+                        // Handler yang bisa telat diproses saat thread utama sibuk — supaya ketukan cepat
+                        // tetap dikenali benar sebagai "ketuk", bukan ketuju jadi "tekan lama".
+                        val held = e.eventTime - e.downTime
+                        if (held < longPressMs) onToggle(n)
+                    }
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(lpRunnable)
@@ -340,6 +360,7 @@ class FloatingBubble(
     // ------------------------------------------------------------------------------------------
 
     fun setRunning(slot: Int, r: Boolean) {
+        if (slot in runningState.indices) runningState[slot] = r
         val iv = plays.getOrNull(slot) ?: return
         iv.setImageDrawable(IconDrawable(if (r) Icon.STOP else Icon.PLAY, if (r) Palette.ink else 0xFFFFFFFF.toInt(), dp(22)))
         (iv.background as? GradientDrawable)?.setColor(if (r) Palette.yellow else Palette.green)
@@ -352,5 +373,6 @@ class FloatingBubble(
         orientBtn = null
         eyeBtn = null
         for (i in plays.indices) plays[i] = null
+        for (i in runningState.indices) runningState[i] = false
     }
 }
