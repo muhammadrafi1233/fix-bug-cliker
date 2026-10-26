@@ -20,7 +20,7 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /** Satu penanda langkah, dalam koordinat layar acuan script. [area] = area cari (hanya langkah "Cari gambar"). */
-private class Mark(val number: Int, val search: Boolean, val ax: Float, val ay: Float, val area: RectF?)
+private class Mark(val number: Int, val search: Boolean, val ax: Float, val ay: Float, val area: RectF?, val outside: Boolean = false)
 
 private fun realDisplayMetrics(ctx: Context): DisplayMetrics {
     val dm = DisplayMetrics()
@@ -122,13 +122,15 @@ class StepOverlay(private val ctx: Context, private val store: ScriptStore) {
                     val box = orig ?: area
                     val ax: Float
                     val ay: Float
+                    var outsideLabel = false
                     if (a.optString("found_action_click") == "Position") {
                         ax = a.optDouble("x").toFloat(); ay = a.optDouble("y").toFloat()
                     } else if (box != null) {
-                        ax = box.centerX(); ay = box.centerY()
+                        ax = box.left; ay = box.top
+                        outsideLabel = true
                     } else continue
                     if (ax.isNaN() || ay.isNaN()) continue
-                    out.add(Mark(n, true, ax, ay, area))
+                    out.add(Mark(n, true, ax, ay, area, outsideLabel))
                 } else {
                     val x = a.optDouble("x").toFloat()
                     val y = a.optDouble("y").toFloat()
@@ -172,8 +174,11 @@ class StepOverlay(private val ctx: Context, private val store: ScriptStore) {
             val sx = dm.widthPixels.toFloat() / refW
             val sy = dm.heightPixels.toFloat() / refH
 
-            // 1) Kotak putus-putus area cari.
+            // 1) Kotak putus-putus area cari. Disembunyikan saat script berjalan: layar ikut direkam untuk pencocokan gambar,
+            //    jadi apa pun yang digambar di atas gambar target akan menurunkan skor kecocokan.
+            val running = current > 0
             for (m in marks) {
+                if (running) break
                 val a = m.area ?: continue
                 dash.color = if (m.number == current) 0xFFF5C637.toInt() else 0xB337872A.toInt()
                 c.drawRect(a.left * sx - ox, a.top * sy - oy, a.right * sx - ox, a.bottom * sy - oy, dash)
@@ -189,8 +194,12 @@ class StepOverlay(private val ctx: Context, private val store: ScriptStore) {
                 if (g != null) g.add(m) else groups.add(arrayListOf(m))
             }
             for (g in groups) {
-                val cx = g[0].ax * sx - ox
-                val cy = g[0].ay * sy - oy
+                var cx = g[0].ax * sx - ox
+                var cy = g[0].ay * sy - oy
+                if (g[0].outside) {   // label di pojok kiri-atas gambar, tidak menutupi gambar yang dicari
+                    cx = max(r, cx - r * 1.2f)
+                    cy = max(r, cy - r * 1.2f)
+                }
                 val isCur = g.any { it.number == current }
                 val label = if (g.size <= 3) g.joinToString(",") { it.number.toString() }
                 else g.take(3).joinToString(",") { it.number.toString() } + "+" + (g.size - 3)
