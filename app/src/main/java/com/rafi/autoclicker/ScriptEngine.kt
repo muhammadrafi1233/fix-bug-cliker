@@ -77,6 +77,9 @@ class ScriptEngine(
     private var lastNeed = 0.0
     private var lastMissLog = 0L
     private var actsRef: JSONArray? = null
+    /** Token dari capturer.invalidate() milik engine INI saja, supaya "tunggu frame baru" tidak kepakai
+     *  oleh engine slot lain yang berjalan bersamaan lewat ScreenCapturer yang sama. */
+    private var freshToken = 0L
 
     fun stop() { running = false }
 
@@ -100,7 +103,7 @@ class ScriptEngine(
                 // Jeda tetap setelah tiap langkah, ada gambar atau tidak, supaya langkah berjalan satu per satu.
                 if (running && cfg.stepGapMs > 0) {
                     sleep(cfg.stepGapMs.toLong())
-                    capturer.invalidate()   // langkah berikutnya memakai frame layar baru
+                    freshToken = capturer.invalidate()   // langkah berikutnya memakai frame layar baru
                 }
             }
             loop++
@@ -171,7 +174,7 @@ class ScriptEngine(
                         val t0 = System.currentTimeMillis()
                         onTap?.invoke(cx.toFloat(), cy.toFloat(), i + 1)
                         svc.tap(cx.toFloat(), cy.toFloat(), act == "DoubleClick", hold, a.optLong("double_gap", 300))
-                        capturer.invalidate()
+                        freshToken = capturer.invalidate()
                         clicked = true
                         if (cfg.clickMs > 0) sleep(cfg.clickMs - (System.currentTimeMillis() - t0))
                     }
@@ -182,7 +185,7 @@ class ScriptEngine(
                         log("#${i + 1} selesai, jeda ${cfg.sameGapMs} ms sebelum #${i + 2} (gambar sama)")
                         // stepGapMs sudah dijalankan oleh run() setelah langkah ini, jadi di sini hanya selisihnya.
                         sleep((cfg.sameGapMs - cfg.stepGapMs).toLong())
-                        capturer.invalidate()
+                        freshToken = capturer.invalidate()
                     }
                     return if (a.optString("found_more_action") == "Action")
                         jumpIndex(a.optString("found_more_action_code"), ids, i + 1) else i + 1
@@ -217,7 +220,7 @@ class ScriptEngine(
         svc.tap(x.toFloat(), y.toFloat(), type.contains("Double"),
             if (type.contains("Long")) a.optLong("end_long_click_duration", 500) else a.optLong("press_ms", 50),
             a.optLong("double_gap", 300))
-        capturer.invalidate()
+        freshToken = capturer.invalidate()
         if (cfg.clickMs > 0) sleep(cfg.clickMs - (System.currentTimeMillis() - t0)) else sleep(a.optLong("delay", 0))
         return i + 1
     }
@@ -247,7 +250,10 @@ class ScriptEngine(
 
         val frame: Mat = if (a.optBoolean("use_pre_search_frame", false) && lastFrame != null) lastFrame!!
         else {
-            val g = capturer.grab() ?: return null
+            // Pakai & habiskan jatah "frame baru" milik engine INI (bukan punya slot lain), lalu reset
+            // supaya pencarian berikutnya tidak ikut menunggu lagi kecuali diminta ulang lewat invalidate().
+            val tok = freshToken; freshToken = 0
+            val g = capturer.grab(tok) ?: return null
             lastFrame?.release(); lastFrame = g; g
         }
         curW = frame.cols().toDouble(); curH = frame.rows().toDouble()

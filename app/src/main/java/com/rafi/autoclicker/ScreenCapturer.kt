@@ -21,10 +21,13 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
     private var w = 0
     private var h = 0
     private var last: Bitmap? = null
-    @Volatile private var needFresh = false
+    /** Nomor urut frame, naik tiap kali ada gambar BARU dari layar. Dipakai supaya tiap engine (slot) bisa
+     *  minta "tunggu frame baru" masing-masing tanpa rebutan dengan engine slot lain yang berjalan bersamaan. */
+    @Volatile private var frameSeq = 0L
 
-    /** Dipanggil setelah klik: pencarian berikutnya menunggu frame baru (maks 250 ms). */
-    fun invalidate() { needFresh = true }
+    /** Dipanggil setelah klik: kembalikan token yang dipakai di grab(waitFor=...) supaya PEMANGGIL INI
+     *  (bukan engine lain) menunggu frame baru (maks 250 ms) sebelum mencocokkan gambar lagi. */
+    fun invalidate(): Long = frameSeq + 1
 
     init {
         mp.registerCallback(object : MediaProjection.Callback() {
@@ -53,10 +56,11 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
         w = nw; h = nh; last = null
     }
 
-    /** Mengembalikan frame layar terbaru (BGR) atau null. */
+    /** Mengembalikan frame layar terbaru (BGR) atau null. [waitFor] = token dari invalidate() milik PEMANGGIL
+     *  INI (0 = tidak perlu menunggu frame baru, langsung ambil yang ada). */
     @Synchronized
-    fun grab(): Mat? {
-        val b = acquire() ?: return null
+    fun grab(waitFor: Long = 0): Mat? {
+        val b = acquire(waitFor) ?: return null
         val m = Mat()
         Utils.bitmapToMat(b, m)
         Imgproc.cvtColor(m, m, Imgproc.COLOR_RGBA2BGR)
@@ -65,17 +69,16 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
 
     /** Layar sekarang sebagai Bitmap salinan (menunggu frame baru, maks 250 ms). Tidak butuh OpenCV; dipakai alat potong gambar. */
     fun grabBitmap(): Bitmap? {
-        invalidate()
-        return acquire()?.copy(Bitmap.Config.ARGB_8888, false)
+        val tok = invalidate()
+        return acquire(tok)?.copy(Bitmap.Config.ARGB_8888, false)
     }
 
-    /** Frame layar terbaru sebagai Bitmap (atau null). Bitmap ini milik capturer: jangan diubah. */
+    /** Frame layar terbaru sebagai Bitmap (atau null). Bitmap ini milik capturer: jangan diubah.
+     *  [waitFor] > 0 = tunggu sampai frameSeq mencapai token itu (frame genuinely baru), maks 250 ms. */
     @Synchronized
-    private fun acquire(): Bitmap? {
+    private fun acquire(waitFor: Long = 0): Bitmap? {
         val dm = realMetrics()
         if (vd == null || dm.widthPixels != w || dm.heightPixels != h) setup(dm.widthPixels, dm.heightPixels, dm.densityDpi)
-        val fresh = needFresh; needFresh = false
-        var gotNew = false
         val t0 = System.currentTimeMillis()
         val deadline = t0 + 1500
         val freshDeadline = t0 + 250
@@ -88,12 +91,12 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
                     val bmp = Bitmap.createBitmap(img.width + pad / p.pixelStride, img.height, Bitmap.Config.ARGB_8888)
                     bmp.copyPixelsFromBuffer(p.buffer)
                     last = if (pad == 0) bmp else Bitmap.createBitmap(bmp, 0, 0, img.width, img.height)
-                    gotNew = true
+                    frameSeq++
                 }
                 img.close()
             }
             val now = System.currentTimeMillis()
-            if (last != null && (!fresh || gotNew || now > freshDeadline)) break
+            if (last != null && (waitFor <= 0 || frameSeq >= waitFor || now > freshDeadline)) break
             if (now > deadline) break
             Thread.sleep(15)
         }

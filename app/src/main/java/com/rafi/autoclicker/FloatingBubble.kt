@@ -101,42 +101,40 @@ class FloatingBubble(
         return wrap
     }
 
-    /** Ketuk singkat = toggle start/stop slot [n]; tahan ~450ms = buka daftar pilih script untuk slot itu
-     *  (hanya berlaku saat belum jalan — saat sedang jalan, satu sentuhan = stop, langsung, tanpa syarat). */
+    /** Ketuk = toggle start/stop slot [n]; tahan sampai panel pilih-script BENERAN kebuka = batal toggle
+     *  (hanya berlaku saat belum jalan — saat sedang jalan, satu sentuhan = stop, langsung, tanpa syarat).
+     *  Keputusannya BUKAN dari lama sentuhan (klik mouse di emulator sering agak lambat/tidak presisi,
+     *  jadi gampang salah dianggap "tekan lama"), tapi dari apakah panel sempat kebuka sebelum jari/mouse
+     *  dilepas — kalau belum sempat, dianggap ketuk biasa, berapa pun lama tekannya. */
     private fun bindPlay(iv: ImageView, n: Int) {
-        val longPressMs = android.view.ViewConfiguration.getLongPressTimeout().toLong().coerceAtLeast(450L)
-        var longPressFired = false
-        var stoppedOnDown = false
-        val lpRunnable = Runnable { longPressFired = true; togglePanel(n) }
+        val longPressMs = 600L
+        var isDown = false
+        var acted = false   // sudah diputuskan (toggle ATAU buka panel) untuk sentuhan kali ini
+        val lpRunnable = Runnable { if (isDown && !acted) { acted = true; togglePanel(n) } }
         iv.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    longPressFired = false
-                    stoppedOnDown = false
+                    isDown = true; acted = false
                     // Umpan balik instan: tombol mengecil + getar ringan begitu disentuh.
                     iv.animate().cancel(); iv.animate().scaleX(0.86f).scaleY(0.86f).setDuration(50).start()
                     iv.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     if (runningState[n]) {
-                        // Sedang jalan: stop langsung saat disentuh. Tidak menunggu lepas jari atau timer apa pun,
+                        // Sedang jalan: stop langsung saat disentuh, tidak menunggu lepas jari atau timer apa pun,
                         // supaya tombol Stop selalu responsif walau thread utama lagi sibuk menjalankan script.
-                        stoppedOnDown = true
+                        acted = true
                         onToggle(n)
                     } else {
                         main.postDelayed(lpRunnable, longPressMs)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
+                    isDown = false
                     main.removeCallbacks(lpRunnable)
                     iv.animate().cancel(); iv.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
-                    if (!stoppedOnDown && !longPressFired) {
-                        // Pakai durasi sentuhan ASLI dari sistem input (eventTime - downTime), bukan urutan
-                        // Handler yang bisa telat diproses saat thread utama sibuk — supaya ketukan cepat
-                        // tetap dikenali benar sebagai "ketuk", bukan ketuju jadi "tekan lama".
-                        val held = e.eventTime - e.downTime
-                        if (held < longPressMs) onToggle(n)
-                    }
+                    if (!acted) { acted = true; onToggle(n) }
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    isDown = false
                     main.removeCallbacks(lpRunnable)
                     iv.animate().cancel(); iv.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
                 }

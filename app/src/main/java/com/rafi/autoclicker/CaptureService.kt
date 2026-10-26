@@ -135,12 +135,22 @@ class CaptureService : Service() {
      *  jadi 3 slot bisa jalan bersamaan; satu kapturer layar (capturer) dipakai bersama karena sama-sama
      *  membaca layar yang sama, dan ketukannya sudah diantre lewat ClickerAccessibilityService.tap(). */
     private fun startEngine(slot: Int) {
-        val cap = capturer ?: return
+        val cap = capturer ?: run { Bus.log("Tombol ${slot + 1}: belum bisa jalan, capture layar belum siap"); return }
         if (Bus.runningSlots[slot]) return
-        if (ClickerAccessibilityService.instance == null) { toast("Aktifkan Layanan Aksesibilitas dulu"); return }
+        if (ClickerAccessibilityService.instance == null) {
+            toast("Aktifkan Layanan Aksesibilitas dulu")
+            Bus.log("Tombol ${slot + 1}: gagal jalan, Layanan Aksesibilitas belum aktif")
+            return
+        }
         val store = ScriptStore(this)
         val slug = store.activeSlugSlot(slot)
-        if (store.missingImages(slug).isNotEmpty()) { toast("Gambar tombol ${slot + 1} belum lengkap, impor dulu"); return }
+        if (slug.isBlank()) { toast("Tombol ${slot + 1}: belum ada script dipasang"); Bus.log("Tombol ${slot + 1}: gagal jalan, belum ada script dipasang"); return }
+        val missing = store.missingImages(slug)
+        if (missing.isNotEmpty()) {
+            toast("Gambar tombol ${slot + 1} belum lengkap, impor dulu")
+            Bus.log("Tombol ${slot + 1} [$slug]: gagal jalan, ${missing.size} gambar langkah belum lengkap")
+            return
+        }
         val base = Prefs.cfg(this)
         // Mode uji sekali pakai dari editor langkah hanya berlaku bila tombol ini sedang menjalankan script aktif lama.
         val test = if (slug == store.activeSlug) Prefs.takeTest(this) else null
