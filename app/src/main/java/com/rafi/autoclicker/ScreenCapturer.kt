@@ -56,6 +56,22 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
     /** Mengembalikan frame layar terbaru (BGR) atau null. */
     @Synchronized
     fun grab(): Mat? {
+        val b = acquire() ?: return null
+        val m = Mat()
+        Utils.bitmapToMat(b, m)
+        Imgproc.cvtColor(m, m, Imgproc.COLOR_RGBA2BGR)
+        return m
+    }
+
+    /** Layar sekarang sebagai Bitmap salinan (menunggu frame baru, maks 250 ms). Tidak butuh OpenCV; dipakai alat potong gambar. */
+    fun grabBitmap(): Bitmap? {
+        invalidate()
+        return acquire()?.copy(Bitmap.Config.ARGB_8888, false)
+    }
+
+    /** Frame layar terbaru sebagai Bitmap (atau null). Bitmap ini milik capturer: jangan diubah. */
+    @Synchronized
+    private fun acquire(): Bitmap? {
         val dm = realMetrics()
         if (vd == null || dm.widthPixels != w || dm.heightPixels != h) setup(dm.widthPixels, dm.heightPixels, dm.densityDpi)
         val fresh = needFresh; needFresh = false
@@ -81,11 +97,7 @@ class ScreenCapturer(private val ctx: Context, private val mp: MediaProjection) 
             if (now > deadline) break
             Thread.sleep(15)
         }
-        val b = last ?: return null
-        val m = Mat()
-        Utils.bitmapToMat(b, m)
-        Imgproc.cvtColor(m, m, Imgproc.COLOR_RGBA2BGR)
-        return m
+        return last
     }
 
     fun release() {

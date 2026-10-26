@@ -338,7 +338,7 @@ class MainActivity : Activity() {
         val viewTexts = LinearLayout(this)
         viewTexts.orientation = LinearLayout.VERTICAL
         viewTexts.addView(text("Nomor langkah di layar", 15f, Palette.ink, true))
-        viewTexts.addView(text("Menampilkan nomor langkah aktif di atas layar, ada klik atau tidak.", 12.5f, Palette.inkSoft))
+        viewTexts.addView(text("Menampilkan penanda nomor tiap langkah di titik kerjanya (klik / gambar), walau belum mengklik. Tombol mata di tombol melayang untuk menyembunyikannya sementara.", 12.5f, Palette.inkSoft))
         viewRow.addView(viewTexts, lp(0, WRAP, 1f, 0, 0, dp(12), 0))
         markerSw = Switch(this)
         markerSw.id = 0x5A19

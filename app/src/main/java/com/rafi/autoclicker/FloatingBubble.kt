@@ -33,7 +33,8 @@ class FloatingBubble(
     private val onClose: () -> Unit,
     private val listScripts: () -> List<ScriptInfo>,
     private val activeSlugFor: (Int) -> String,
-    private val onPickScript: (Int, ScriptInfo) -> Unit
+    private val onPickScript: (Int, ScriptInfo) -> Unit,
+    private val onSteps: (Boolean) -> Unit = {}     // tombol mata: tampil / sembunyikan penanda langkah di layar
 ) {
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -46,6 +47,10 @@ class FloatingBubble(
     private val ui = ctx.getSharedPreferences("bubble_ui", Context.MODE_PRIVATE)
     private var vertical = ui.getBoolean("vertical", false)
     private var orientBtn: ImageView? = null
+    private var eyeBtn: ImageView? = null
+    /** True = penanda langkah di layar ditampilkan (diingat untuk pemakaian berikutnya). */
+    var stepsOn = ui.getBoolean("showSteps", true)
+        private set
 
     private val lp = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -154,10 +159,20 @@ class FloatingBubble(
         val o = circle(if (vertical) Icon.ROW else Icon.COLUMN, 0xFF4F6B54.toInt(), 0xFFFFFFFF.toInt(), orientDesc())
             .also { it.setOnClickListener { toggleOrientation() } }
         orientBtn = o
+        val eye = circle(Icon.EYE, 0xFF4F6B54.toInt(), 0xFFFFFFFF.toInt(), eyeDesc()).also { iv ->
+            iv.setOnClickListener {
+                stepsOn = !stepsOn
+                ui.edit().putBoolean("showSteps", stepsOn).apply()
+                refreshEye()
+                onSteps(stepsOn)
+            }
+        }
+        eyeBtn = eye
+        refreshEye()
         val s = circle(Icon.GEAR, Palette.yellow, Palette.ink, "Buka Rafi Automatic").also { it.setOnClickListener { onSettings() } }
         val c = circle(Icon.CLOSE, Palette.red, 0xFFFFFFFF.toInt(), "Tutup tombol melayang").also { it.setOnClickListener { onClose() } }
-        b.addView(handle); pl.forEach { b.addView(it) }; b.addView(o); b.addView(s); b.addView(c)
-        extras.clear(); extras.add(o); extras.add(s); extras.add(c)   // saat diperkecil: ✥ + semua tombol ▶ tetap tampil
+        b.addView(handle); pl.forEach { b.addView(it) }; b.addView(o); b.addView(eye); b.addView(s); b.addView(c)
+        extras.clear(); extras.add(o); extras.add(eye); extras.add(s); extras.add(c)   // saat diperkecil: ✥ + semua tombol ▶ tetap tampil
         box = b
         applyExpanded()
         wm.addView(b, lp)
@@ -172,6 +187,22 @@ class FloatingBubble(
         applyExpanded()
         if (!e) hidePanel()
         relayout()
+    }
+
+    private fun eyeDesc() = if (stepsOn) "Sembunyikan penanda langkah di layar" else "Tampilkan penanda langkah di layar"
+
+    /** Tombol mata terang bila penanda langkah tampil, redup bila disembunyikan. */
+    private fun refreshEye() {
+        val iv = eyeBtn ?: return
+        iv.alpha = if (stepsOn) 1f else 0.5f
+        (iv.background as? GradientDrawable)?.setColor(if (stepsOn) Palette.green else 0xFF4F6B54.toInt())
+        iv.contentDescription = eyeDesc()
+    }
+
+    /** Sembunyikan / tampilkan seluruh tombol melayang tanpa melepasnya (dipakai saat mengambil tangkapan layar). */
+    fun setVisible(v: Boolean) {
+        if (!v) hidePanel()
+        box?.visibility = if (v) View.VISIBLE else View.INVISIBLE
     }
 
     private fun orientDesc() = if (vertical) "Susun tombol ke samping" else "Susun tombol ke bawah"
@@ -319,6 +350,7 @@ class FloatingBubble(
         box?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         box = null
         orientBtn = null
+        eyeBtn = null
         for (i in plays.indices) plays[i] = null
     }
 }

@@ -145,7 +145,8 @@ fun Context.sectionTitle(t: String): TextView {
 enum class Icon {
     PLAY, STOP, GEAR, IMAGE, UPLOAD, ACCESS, LAYERS, LIST, CHECK, ALERT, CLOSE, TRASH,
     UP, DOWN, MOVE, PLUS, RESET, LEAF, CLOCK, CHEVRON, INFO, BACK, TARGET, HOME,
-    ROW, COLUMN   // susunan tombol melayang: ke samping / ke bawah
+    ROW, COLUMN,  // susunan tombol melayang: ke samping / ke bawah
+    CUT, MINUS, EYE   // alat potong gambar dari layar + penanda langkah
 }
 
 class IconDrawable(private val kind: Icon, tint: Int, private val px: Int) : Drawable() {
@@ -260,6 +261,22 @@ class IconDrawable(private val kind: Icon, tint: Int, private val px: Int) : Dra
                 poly(c, false, false, 17.5f, 9f, 20.5f, 12f, 17.5f, 15f)
             }
             Icon.PLUS -> { line(c, 12f, 5f, 12f, 19f); line(c, 5f, 12f, 19f, 12f) }
+            Icon.MINUS -> line(c, 5f, 12f, 19f, 12f)
+            Icon.CUT -> {
+                c.drawCircle(7f, 17.5f, 2.6f, stroke)
+                c.drawCircle(17f, 17.5f, 2.6f, stroke)
+                line(c, 8.6f, 15.4f, 17.5f, 4.5f)
+                line(c, 15.4f, 15.4f, 6.5f, 4.5f)
+            }
+            Icon.EYE -> {
+                path.reset()
+                path.moveTo(2.5f, 12f)
+                path.cubicTo(6f, 5.5f, 18f, 5.5f, 21.5f, 12f)
+                path.cubicTo(18f, 18.5f, 6f, 18.5f, 2.5f, 12f)
+                path.close()
+                c.drawPath(path, stroke)
+                c.drawCircle(12f, 12f, 3f, stroke)
+            }
             Icon.RESET -> {
                 c.drawArc(RectF(5f, 5f, 19f, 19f), 300f, 300f, false, stroke)
                 poly(c, false, false, 19.5f, 2.5f, 15.5f, 5.9f, 19.7f, 7.6f)

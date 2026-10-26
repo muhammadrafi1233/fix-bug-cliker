@@ -2,7 +2,9 @@ package com.rafi.autoclicker
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -31,6 +33,7 @@ class ActionsActivity : Activity() {
     private lateinit var list: ListView
     private lateinit var countText: TextView
     private lateinit var btnAdd: AppButton
+    private lateinit var btnAddImage: AppButton
     private var root = JSONObject()
     private val acts = ArrayList<JSONObject>()
     private var broken = false
@@ -77,10 +80,12 @@ class ActionsActivity : Activity() {
 
         // ---- aksi
         val actions = LinearLayout(this)
-        actions.orientation = LinearLayout.HORIZONTAL
+        actions.orientation = LinearLayout.VERTICAL
         actions.setPadding(dp(16), dp(8), dp(16), dp(8))
         btnAdd = AppButton(this, "Klik koordinat", BtnStyle.PRIMARY, Icon.PLUS)
         btnAdd.setOnClickListener { addClick() }
+        btnAddImage = AppButton(this, "Cari gambar", BtnStyle.YELLOW, Icon.IMAGE)
+        btnAddImage.setOnClickListener { requestCapture("") }
         val btnReset = AppButton(this, "Reset bawaan", BtnStyle.SECONDARY, Icon.RESET)
         btnReset.setOnClickListener {
             confirm(
@@ -89,8 +94,12 @@ class ActionsActivity : Activity() {
                 "Reset", true
             ) { reset() }
         }
-        actions.addView(btnAdd, lp(0, WRAP, 1f, 0, 0, dp(6), 0))
-        actions.addView(btnReset, lp(0, WRAP, 1f, dp(6), 0, 0, 0))
+        val rowAdd = LinearLayout(this)
+        rowAdd.orientation = LinearLayout.HORIZONTAL
+        rowAdd.addView(btnAdd, lp(0, WRAP, 1f, 0, 0, dp(6), 0))
+        rowAdd.addView(btnAddImage, lp(0, WRAP, 1f, dp(6), 0, 0, 0))
+        actions.addView(rowAdd, lp(MATCH, WRAP))
+        actions.addView(btnReset, lp(MATCH, WRAP, 0f, 0, dp(8), 0, 0))
         col.addView(actions, lp(MATCH, WRAP))
 
         // ---- daftar + state kosong
@@ -126,6 +135,38 @@ class ActionsActivity : Activity() {
         reload()
     }
 
+    /** Kembali dari alat potong gambar (atau dari layar lain): baca ulang script supaya perubahan terlihat. */
+    override fun onResume() {
+        super.onResume()
+        if (::list.isInitialized) reload()
+    }
+
+    /** Minta layanan tombol melayang (bila aktif) memuat ulang penanda langkah di layar. */
+    private fun notifyOverlay() {
+        if (!Bus.serviceActive) return
+        try {
+            startService(Intent(this, CaptureService::class.java)
+                .setAction(CaptureService.ACTION_REFRESH).putExtra("slug", store.activeSlug))
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Ambil / ganti gambar langkah langsung dari layar game (alat potong). [id] kosong = buat langkah "Cari gambar" baru.
+     * Aplikasi minggir; pengguna membuka game, mengetuk "Ambil layar", lalu memotong gambar yang dipakai.
+     */
+    private fun requestCapture(id: String) {
+        if (broken) return
+        if (!Bus.serviceActive) {
+            Toast.makeText(this,
+                "Tekan Mulai di layar utama dulu (tombol melayang harus aktif), lalu coba lagi.", Toast.LENGTH_LONG).show()
+            return
+        }
+        startService(Intent(this, CaptureService::class.java)
+            .setAction(CaptureService.ACTION_RECAPTURE)
+            .putExtra("slug", store.activeSlug).putExtra("id", id))
+        moveTaskToBack(true)
+    }
+
     // ---------- data (logika tidak berubah) ----------
 
     private fun reload() {
@@ -140,6 +181,7 @@ class ActionsActivity : Activity() {
             Toast.makeText(this, "Script tidak bisa dibaca. Tekan Reset bawaan untuk memulihkan.", Toast.LENGTH_LONG).show()
         }
         btnAdd.isEnabled = !broken
+        btnAddImage.isEnabled = !broken
         refresh()
     }
 
@@ -154,6 +196,7 @@ class ActionsActivity : Activity() {
         root.put("actions", JSONArray(acts))
         store.scriptFile.writeText(root.toString(2))
         refresh()
+        notifyOverlay()
     }
 
     private fun reset() {
@@ -306,7 +349,33 @@ class ActionsActivity : Activity() {
         form.addView(mv, lp(MATCH, WRAP))
 
         val applyEdits: () -> Unit
+        var imgBtn: AppButton? = null
         if (isSearch) {
+            section(form, "Gambar yang dicari")
+            val imgs = a.optJSONArray("images")
+            var imgName = imgs?.optString(0).orEmpty()
+            if (imgName.isEmpty() || imgName == "null") imgName = a.optString("image")
+            val bmp = store.imageFile(imgName)?.let { BitmapFactory.decodeFile(it.absolutePath) }
+            if (bmp != null) {
+                val thumb = ImageView(this)
+                thumb.setImageBitmap(bmp)
+                thumb.scaleType = ImageView.ScaleType.FIT_CENTER
+                thumb.adjustViewBounds = true
+                thumb.maxHeight = dp(120)
+                thumb.setPadding(dp(6), dp(6), dp(6), dp(6))
+                thumb.background = inputBackground(false)
+                form.addView(thumb, lp(MATCH, WRAP, 0f, 0, dp(6), 0, 0))
+                form.addView(text("${bmp.width} x ${bmp.height} px", 12f, Palette.inkSoft), lp(MATCH, WRAP, 0f, 0, dp(4), 0, 0))
+            } else {
+                form.addView(text("Gambar belum ada. Ambil dari layar game.", 13f, Palette.inkSoft), lp(MATCH, WRAP, 0f, 0, dp(6), 0, 0))
+            }
+            val bImg = AppButton(this, "Ubah gambar dari layar", BtnStyle.YELLOW, Icon.IMAGE)
+            imgBtn = bImg
+            form.addView(bImg, lp(MATCH, WRAP, 0f, 0, dp(8), 0, 0))
+            form.addView(
+                text("Perlu tombol melayang aktif. Buka game, ketuk Ambil layar, lalu potong gambar dengan kotak.", 12f, Palette.inkSoft),
+                lp(MATCH, WRAP, 0f, dp(2), dp(6), 0, 0)
+            )
             val foundOpts = listOf("Click", "DoubleClick", "LongClick", "Next")
             val nfOpts = listOf("Repeat", "Next", "Action")
             section(form, "Jika gambar DITEMUKAN")
@@ -394,6 +463,12 @@ class ActionsActivity : Activity() {
             text("Uji berjalan sekali saat tombol ▶ melayang ditekan.", 12f, Palette.inkSoft),
             2, lp(MATCH, WRAP, 0f, dp(2), dp(6), 0, 0)
         )
+
+        imgBtn?.setOnClickListener {
+            applyEdits(); save()
+            dlg?.dismiss()
+            requestCapture(a.optString("id"))
+        }
 
         val d = AlertDialog.Builder(this)
             .setTitle("Langkah #${pos + 1}")

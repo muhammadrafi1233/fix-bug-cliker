@@ -1,6 +1,8 @@
 package com.rafi.autoclicker
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.net.Uri
 import android.provider.OpenableColumns
 import org.json.JSONArray
@@ -9,6 +11,7 @@ import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** Ringkasan satu script untuk daftar di dashboard. */
 data class ScriptInfo(val slug: String, val name: String, val steps: Int, val ok: Boolean)
@@ -234,6 +237,103 @@ class ScriptStore(private val ctx: Context) {
     }
 
     fun missingImages(slug: String = activeSlug) = requiredImages(slug).filter { imageFile(it) == null }
+
+    // ------------------------------------------------------------------------------------------
+    // Ganti / tambah gambar langkah dari layar (alat potong)
+    // ------------------------------------------------------------------------------------------
+
+    /** Ukuran layar acuan script (sama dengan yang dipakai ScriptEngine): ref_w/ref_h script, atau pengaturan aplikasi. */
+    fun refSize(slug: String): Pair<Int, Int> {
+        val base = Prefs.cfg(ctx)
+        return try {
+            val o = load(slug)
+            val w = o.optInt("ref_w", 0)
+            val h = o.optInt("ref_h", 0)
+            if (w > 0 && h > 0) w to h else base.refW to base.refH
+        } catch (_: Exception) {
+            base.refW to base.refH
+        }
+    }
+
+    /**
+     * Menyimpan potongan layar sebagai gambar langkah "Cari gambar".
+     *  - [actionId] ada di script  -> gambar langkah itu diganti (nama berkas tetap), area cari ikut menyesuaikan.
+     *  - [actionId] kosong / tidak ada -> dibuat langkah "Cari gambar" baru di akhir script.
+     * [crop] = potongan dalam piksel layar saat ini, [region] = posisinya di layar ([screenW] x [screenH]).
+     * Gambar disimpan dalam skala layar acuan script, karena ScriptEngine mengalikannya lagi dengan layar/acuan.
+     * Mengembalikan pesan hasil.
+     */
+    fun saveCapture(slug: String, actionId: String, crop: Bitmap, region: Rect, screenW: Int, screenH: Int): String {
+        val root = load(slug)
+        val acts = root.getJSONArray("actions")
+        val ref = refSize(slug)
+        val fx = ref.first.toDouble() / screenW
+        val fy = ref.second.toDouble() / screenH
+
+        var idx = -1
+        if (actionId.isNotEmpty()) for (i in 0 until acts.length()) {
+            if (acts.getJSONObject(i).optString("id") == actionId) { idx = i; break }
+        }
+        val isNew = idx < 0
+        val a: JSONObject = if (isNew) newSearchStep() else acts.getJSONObject(idx)
+        val id = a.optString("id")
+
+        // Nama berkas gambar: pakai yang sudah ada di langkah, kalau belum ada buat "<id>_0".
+        val imgs = a.optJSONArray("images")
+        var name = imgs?.optString(0).orEmpty()
+        if (name.isEmpty() || name == "null") name = a.optString("image")
+        if (name.isEmpty() || name == "null") name = "${id}_0"
+
+        val tw = max(1, (crop.width * fx).roundToInt())
+        val th = max(1, (crop.height * fy).roundToInt())
+        val out = if (tw == crop.width && th == crop.height) crop else Bitmap.createScaledBitmap(crop, tw, th, true)
+        File(imgDir, "$name.png").outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        for (ext in listOf("jpg", "jpeg", "webp")) File(imgDir, "$name.$ext").delete()   // supaya hanya versi terbaru yang dipakai
+
+        // Posisi gambar & area cari, dalam koordinat layar acuan.
+        val rx = (region.left * fx).roundToInt()
+        val ry = (region.top * fy).roundToInt()
+        val rw = max(1, (region.width() * fx).roundToInt())
+        val rh = max(1, (region.height() * fy).roundToInt())
+        val arr = imgs ?: JSONArray().also { a.put("images", it) }
+        arr.put(0, name)
+        a.put("image", name)
+        val orArr = a.optJSONArray("origin_rect") ?: JSONArray().also { a.put("origin_rect", it) }
+        orArr.put(0, JSONObject().put("x", rx).put("y", ry).put("w", rw).put("h", rh))
+
+        // Area cari lama dipertahankan bila masih memuat gambar baru; kalau tidak, area baru = gambar + margin 10 px.
+        val old = a.optJSONObject("rect")
+        val keepOld = old != null && old.optInt("w") > 0 && old.optInt("h") > 0 &&
+            rx >= old.optInt("x") && ry >= old.optInt("y") &&
+            rx + rw <= old.optInt("x") + old.optInt("w") && ry + rh <= old.optInt("y") + old.optInt("h")
+        if (!keepOld) {
+            val m = 10
+            val ax = max(0, rx - m)
+            val ay = max(0, ry - m)
+            val aw = minOf(rw + 2 * m, ref.first - ax)
+            val ah = minOf(rh + 2 * m, ref.second - ay)
+            a.put("rect", JSONObject().put("x", ax).put("y", ay).put("w", max(1, aw)).put("h", max(1, ah)))
+        }
+        if (isNew) {
+            a.put("x", rx + rw / 2)
+            a.put("y", ry + rh / 2)
+            acts.put(a)
+        }
+        fileOf(slug).writeText(root.toString(2))
+        return if (isNew) "Langkah #${acts.length()} (cari gambar) ditambahkan"
+        else "Gambar langkah #${idx + 1} diperbarui (${rw} x ${rh})"
+    }
+
+    private fun newSearchStep(): JSONObject {
+        val id = java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+        return JSONObject().apply {
+            put("id", id); put("type", "Search Image"); put("action_alias", "Search Image")
+            put("found_action", "Click"); put("found_action_click", "Image"); put("found_more_action", "Next")
+            put("not_found_action", "Repeat"); put("not_found_action_repeat", 500); put("not_found_action_repeat_count", 1)
+            put("similar", 85); put("delay", 300); put("area", 1); put("click_loop_count", 1); put("r", 50.0)
+            put("end_long_click_duration", 500)
+        }
+    }
 
     // ------------------------------------------------------------------------------------------
     // Impor

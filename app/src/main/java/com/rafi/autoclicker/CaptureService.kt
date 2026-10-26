@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -20,6 +22,10 @@ class CaptureService : Service() {
     companion object {
         const val ACTION_START = "start"
         const val ACTION_STOP = "stop"
+        /** Dari editor langkah: ambil gambar baru dari layar. Extra: "slug" (script), "id" (langkah; kosong = langkah baru). */
+        const val ACTION_RECAPTURE = "recapture"
+        /** Dari editor langkah: script berubah, baca ulang penanda langkah. Extra opsional: "slug". */
+        const val ACTION_REFRESH = "refresh"
         private const val CH = "clicker"
     }
 
@@ -30,6 +36,9 @@ class CaptureService : Service() {
     private var bubble: FloatingBubble? = null
     private var marker: TapMarker? = null
     private var badge: StepBadge? = null
+    private var overlay: StepOverlay? = null       // penanda langkah yang selalu tampil
+    private var prompt: CapturePrompt? = null      // pil "Ambil layar" saat mengganti gambar
+    private var cropper: CropOverlay? = null       // alat potong gambar
     private val main = Handler(Looper.getMainLooper())
     private var active = false
 
@@ -39,6 +48,16 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
+        val act = intent?.action
+        if (act == ACTION_REFRESH || act == ACTION_RECAPTURE) {
+            // Layanan belum jalan (instance baru tanpa tombol melayang): tidak ada yang bisa dikerjakan.
+            if (!active) { stopSelf(); return START_NOT_STICKY }
+            val slug = intent?.getStringExtra("slug").orEmpty()
+            val stepId = intent?.getStringExtra("id").orEmpty()
+            if (act == ACTION_REFRESH) main.post { if (slug.isNotEmpty()) showOverlay(slug) else overlay?.reload() }
+            else main.post { beginRecapture(slug, stepId) }
+            return START_NOT_STICKY
+        }
         if (intent?.action != ACTION_START || active) return START_NOT_STICKY
 
         val nm = getSystemService(NotificationManager::class.java)
@@ -80,11 +99,23 @@ class CaptureService : Service() {
                         scriptStore.setActiveSlugSlot(slot, s.slug)
                         toast("Tombol ${slot + 1}: ${s.name}")
                         Bus.log("Tombol ${slot + 1} dipasangi script: ${s.name}")
+                        showOverlay(s.slug)
                     }
-                }).also { it.show() }
+                },
+                onSteps = { on -> if (on) showOverlay(scriptStore.activeSlugSlot(0)) else overlay?.hide() }).also { it.show() }
+            overlay = StepOverlay(this, scriptStore)
+            showOverlay(scriptStore.activeSlugSlot(0))
             toast(if (count == 1) "Buka game, lalu tekan tombol ▶" else "Buka game, lalu tekan salah satu dari $count tombol ▶")
         } else toast("Izin 'tampil di atas aplikasi lain' belum diberikan")
         return START_NOT_STICKY
+    }
+
+    /** Penanda langkah dipakai bila tombol mata di tombol melayang menyala DAN "Nomor langkah di layar" di pengaturan aktif. */
+    private fun overlayWanted() = (bubble?.stepsOn ?: false) && Prefs.cfg(this).marker
+
+    private fun showOverlay(slug: String) {
+        val o = overlay ?: return
+        if (overlayWanted()) o.show(slug) else o.hide()
     }
 
     private fun toggle(slot: Int) { if (Bus.runningSlots[slot]) stopEngine(slot) else startEngine(slot) }
@@ -96,6 +127,7 @@ class CaptureService : Service() {
         e?.stop()
         Bus.setRunning(slot, false)
         bubble?.setRunning(slot, false)
+        if (!Bus.running) overlay?.setCurrent(0)
         Bus.ping()
     }
 
@@ -120,9 +152,17 @@ class CaptureService : Service() {
         if (!cfg.marker) { badge?.hide(); badge = null }
         val mk = marker
         val bd = badge
+        val ov = overlay
+        // Sorotan langkah aktif hanya mengikuti tombol ▶ dengan nomor terkecil yang berjalan (supaya tidak berkedip bila beberapa script jalan).
+        val onStep: ((Int, Int) -> Unit)? = if (bd != null || ov != null) { n, total ->
+            main.post {
+                bd?.show(n, total)
+                if (ov != null && overlayWanted() && Bus.runningSlots.indexOfFirst { it } == slot) ov.focus(slug, n)
+            }
+        } else null
         val eng = ScriptEngine(store, slug, cap, cfg,
             if (mk != null) { x, y, n -> main.post { mk.show(x, y, n) } } else null,
-            if (bd != null) { n, total -> main.post { bd.show(n, total) } } else null)
+            onStep)
         engines[slot] = eng
         Bus.setRunning(slot, true)
         bubble?.setRunning(slot, true)   // ikon ■ langsung muncul; pemuatan script berjalan di thread terpisah
@@ -142,6 +182,7 @@ class CaptureService : Service() {
                         engines[slot] = null
                         Bus.setRunning(slot, false)
                         bubble?.setRunning(slot, false)
+                        if (!Bus.running) overlay?.setCurrent(0)
                         Bus.ping()
                     }
                 }
@@ -149,8 +190,107 @@ class CaptureService : Service() {
         }.start()
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Ganti / tambah gambar langkah dari layar
+    // ------------------------------------------------------------------------------------------
+
+    /** Nomor langkah (mulai 1) dengan id [id] di script [slug]; 0 bila tidak ada. */
+    private fun stepNumberOf(slug: String, id: String): Int = try {
+        val acts = ScriptStore(this).load(slug).getJSONArray("actions")
+        var n = 0
+        for (i in 0 until acts.length()) if (acts.getJSONObject(i).optString("id") == id) { n = i + 1; break }
+        n
+    } catch (_: Exception) { 0 }
+
+    /** Tahap 1: tampilkan pil "Ambil layar". Pengguna membuka game ke layar yang dituju, lalu mengetuknya. */
+    private fun beginRecapture(slug: String, id: String) {
+        if (!active || capturer == null) { toast("Tekan Mulai dulu agar bisa mengambil gambar dari layar"); return }
+        if (!Settings.canDrawOverlays(this)) { toast("Izin 'tampil di atas aplikasi lain' belum diberikan"); return }
+        closeCaptureUi()
+        val n = if (id.isEmpty()) 0 else stepNumberOf(slug, id)
+        val title = if (id.isEmpty()) "Tambah langkah cari gambar" else if (n > 0) "Ubah gambar langkah #$n" else "Ubah gambar langkah"
+        prompt = CapturePrompt(this, title, onCapture = { startCrop(slug, id) }, onCancel = { closeCaptureUi() }).also { it.show() }
+        toast("Buka layar game yang dituju, lalu ketuk \"Ambil layar\"")
+    }
+
+    /** Tahap 2: sembunyikan semua overlay kita, ambil tangkapan layar bersih, lalu buka alat potong. */
+    private fun startCrop(slug: String, id: String) {
+        val cap = capturer ?: return
+        prompt?.hide(); prompt = null
+        setOverlaysHidden(true)
+        Thread {
+            try { Thread.sleep(450) } catch (_: InterruptedException) {}   // beri waktu layar menggambar ulang tanpa overlay
+            val shot = try { cap.grabBitmap() } catch (_: Throwable) { null }
+            main.post {
+                if (shot == null || !active) {
+                    setOverlaysHidden(false)
+                    toast("Gagal mengambil layar, coba lagi")
+                    return@post
+                }
+                cropper = CropOverlay(this, shot, initialRegion(slug, id, shot.width, shot.height)) { r -> finishCrop(slug, id, shot, r) }
+                    .also { it.show() }
+            }
+        }.start()
+    }
+
+    /** Kotak awal alat potong: posisi gambar lama (bila ada), dalam piksel tangkapan layar. */
+    private fun initialRegion(slug: String, id: String, sw: Int, sh: Int): Rect? {
+        if (id.isEmpty()) return null
+        return try {
+            val st = ScriptStore(this)
+            val a = st.load(slug).getJSONArray("actions").let { arr ->
+                (0 until arr.length()).map { arr.getJSONObject(it) }.firstOrNull { it.optString("id") == id }
+            } ?: return null
+            val r = a.optJSONArray("origin_rect")?.optJSONObject(0) ?: a.optJSONObject("rect") ?: return null
+            if (r.optInt("w") <= 0 || r.optInt("h") <= 0) return null
+            val ref = st.refSize(slug)
+            val fx = sw.toDouble() / ref.first
+            val fy = sh.toDouble() / ref.second
+            Rect(
+                (r.optInt("x") * fx).toInt().coerceIn(0, sw - 1), (r.optInt("y") * fy).toInt().coerceIn(0, sh - 1),
+                ((r.optInt("x") + r.optInt("w")) * fx).toInt().coerceIn(1, sw), ((r.optInt("y") + r.optInt("h")) * fy).toInt().coerceIn(1, sh)
+            )
+        } catch (_: Exception) { null }
+    }
+
+    /** Tahap 3: simpan potongan ke script, lalu pulihkan tombol melayang dan penanda. */
+    private fun finishCrop(slug: String, id: String, shot: Bitmap, r: Rect?) {
+        cropper = null
+        try {
+            if (r == null) { toast("Dibatalkan"); return }
+            val l = r.left.coerceIn(0, shot.width - 1)
+            val t = r.top.coerceIn(0, shot.height - 1)
+            val w = r.width().coerceIn(1, shot.width - l)
+            val h = r.height().coerceIn(1, shot.height - t)
+            val crop = Bitmap.createBitmap(shot, l, t, w, h)
+            val msg = ScriptStore(this).saveCapture(slug, id, crop, Rect(l, t, l + w, t + h), shot.width, shot.height)
+            Bus.log("[$slug] $msg")
+            toast(msg)
+        } catch (e: Throwable) {
+            toast("Gagal menyimpan gambar: ${e.message}")
+        } finally {
+            setOverlaysHidden(false)
+            showOverlay(slug)
+            shot.recycle()
+        }
+    }
+
+    private fun setOverlaysHidden(hidden: Boolean) {
+        bubble?.setVisible(!hidden)
+        overlay?.setVisible(!hidden)
+        if (hidden) marker?.hide()
+    }
+
+    private fun closeCaptureUi() {
+        prompt?.hide(); prompt = null
+        cropper?.hide(); cropper = null
+        setOverlaysHidden(false)
+    }
+
     private fun shutdown() {
         for (e in engines) e?.stop()
+        closeCaptureUi()
+        overlay?.hide(); overlay = null
         bubble?.hide(); bubble = null
         marker?.hide(); marker = null
         badge?.hide(); badge = null
@@ -168,6 +308,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         for (e in engines) e?.stop()
+        prompt?.hide(); cropper?.hide(); overlay?.hide()
         bubble?.hide(); badge?.hide(); Bus.serviceActive = false; super.onDestroy()
     }
 }
