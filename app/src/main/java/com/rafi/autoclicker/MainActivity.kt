@@ -189,11 +189,14 @@ class MainActivity : Activity() {
         scriptBox = LinearLayout(this)
         scriptBox.orientation = LinearLayout.VERTICAL
         scripts.addView(scriptBox, lp(MATCH, WRAP))
+        val btnNewScript = AppButton(this, "Buat script baru", BtnStyle.PRIMARY, Icon.PLUS)
+        btnNewScript.setOnClickListener { createScript() }
+        scripts.addView(btnNewScript, lp(MATCH, WRAP, 0f, 0, dp(10), 0, 0))
         val btnAddScript = AppButton(this, "Tambah script dari file", BtnStyle.SECONDARY, Icon.PLUS)
         btnAddScript.setOnClickListener { pickFiles() }
-        scripts.addView(btnAddScript, lp(MATCH, WRAP, 0f, 0, dp(10), 0, 0))
+        scripts.addView(btnAddScript, lp(MATCH, WRAP, 0f, 0, dp(8), 0, 0))
         scripts.addView(
-            text("Ketuk script untuk mengaktifkannya (untuk Atur langkah & rentang). Ketuk pil ▶ di kanan untuk memilih script yang dimasukkan ke tombol melayang (maks 3); jumlah tombol ▶ = jumlah yang dipilih, nomornya mengikuti urutan pilih. File .json / .txt ditambahkan sebagai script baru tanpa menimpa yang lama. Dikenali otomatis: script Image Clicker (pakai gambar), macro seperti min_n_max.txt, atau teks Notepad biasa satu klik per baris \"x,y,jeda\".", 12f, Palette.inkSoft),
+            text("Tekan \"Buat script baru\" untuk membuat script langsung di aplikasi (tanpa file): beri nama, lalu isi langkahnya dengan mengetuk titik di layar game. Ketuk script untuk mengaktifkannya (untuk Atur langkah & rentang). Ketuk pil ▶ di kanan untuk memilih script yang dimasukkan ke tombol melayang (maks 3); jumlah tombol ▶ = jumlah yang dipilih, nomornya mengikuti urutan pilih. File .json / .txt ditambahkan sebagai script baru tanpa menimpa yang lama. Dikenali otomatis: script Image Clicker (pakai gambar), macro seperti min_n_max.txt, atau teks Notepad biasa satu klik per baris \"x,y,jeda\".", 12f, Palette.inkSoft),
             lp(MATCH, WRAP, 0f, 0, dp(8), 0, 0)
         )
         pageScripts.addView(scripts, lp(MATCH, WRAP, 0f, 0, 0, 0, dp(12)))
@@ -709,6 +712,35 @@ class MainActivity : Activity() {
         store.activeSlug = s.slug
         refreshStatus()
         showBanner(Tone.OK, "Script aktif: ${s.name}. Tekan ▶ untuk menjalankannya.")
+    }
+
+    /** Buat script kosong langsung di aplikasi, jadikan aktif, lalu buka Atur langkah untuk mengisi langkahnya. */
+    private fun createScript() {
+        if (Bus.running) { toast("Hentikan script yang sedang berjalan dulu (tombol ■)."); return }
+        val et = android.widget.EditText(this)
+        et.hint = "Nama script"
+        et.setSingleLine(true)
+        val wrap = FrameLayout(this)
+        wrap.setPadding(dp(20), dp(8), dp(20), 0)
+        wrap.addView(et, FrameLayout.LayoutParams(MATCH, WRAP))
+        val d = android.app.AlertDialog.Builder(this)
+            .setTitle("Buat script baru")
+            .setView(wrap)
+            .setPositiveButton("Buat") { _, _ ->
+                val n = et.text.toString().trim().ifEmpty { "Script baru" }
+                try {
+                    saveRange()
+                    val slug = store.createBlank(n)
+                    store.activeSlug = slug
+                    refreshStatus()
+                    showBanner(Tone.OK, "Script \"$n\" dibuat. Isi langkahnya: tekan Mulai, buka game, lalu di Atur langkah pilih \"Ketuk titik di layar\".")
+                    startActivity(Intent(this, ActionsActivity::class.java))
+                } catch (e: Exception) { toast("Gagal membuat script: ${e.message}") }
+            }
+            .setNegativeButton("Batal", null)
+            .create()
+        d.show()
+        styleDialog(d)
     }
 
     private fun renameScript(s: ScriptInfo) {

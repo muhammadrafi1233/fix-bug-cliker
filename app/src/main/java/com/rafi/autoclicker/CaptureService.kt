@@ -26,6 +26,8 @@ class CaptureService : Service() {
         const val ACTION_RECAPTURE = "recapture"
         /** Dari editor langkah: script berubah, baca ulang penanda langkah. Extra opsional: "slug". */
         const val ACTION_REFRESH = "refresh"
+        /** Dari editor langkah: ketuk titik-titik di layar untuk dijadikan langkah klik. Extra: "slug" (script). */
+        const val ACTION_RECORD = "record"
         private const val CH = "clicker"
     }
 
@@ -39,6 +41,7 @@ class CaptureService : Service() {
     private var overlay: StepOverlay? = null       // penanda langkah yang selalu tampil
     private var prompt: CapturePrompt? = null      // pil "Ambil layar" saat mengganti gambar
     private var cropper: CropOverlay? = null       // alat potong gambar
+    private var recorder: TapRecorder? = null      // perekam titik klik dari layar
     private val main = Handler(Looper.getMainLooper())
     private var active = false
 
@@ -49,12 +52,13 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
         val act = intent?.action
-        if (act == ACTION_REFRESH || act == ACTION_RECAPTURE) {
+        if (act == ACTION_REFRESH || act == ACTION_RECAPTURE || act == ACTION_RECORD) {
             // Layanan belum jalan (instance baru tanpa tombol melayang): tidak ada yang bisa dikerjakan.
             if (!active) { stopSelf(); return START_NOT_STICKY }
             val slug = intent?.getStringExtra("slug").orEmpty()
             val stepId = intent?.getStringExtra("id").orEmpty()
             if (act == ACTION_REFRESH) main.post { if (slug.isNotEmpty()) showOverlay(slug) else overlay?.reload() }
+            else if (act == ACTION_RECORD) main.post { beginRecord(slug) }
             else main.post { beginRecapture(slug, stepId) }
             return START_NOT_STICKY
         }
@@ -212,6 +216,34 @@ class CaptureService : Service() {
         n
     } catch (_: Exception) { 0 }
 
+    /** Rekam titik klik: sembunyikan tombol melayang & penanda, lalu tampilkan lapisan ketuk. Selesai -> simpan jadi langkah klik. */
+    private fun beginRecord(slug: String) {
+        if (!active) { toast("Tekan Mulai dulu agar bisa merekam titik dari layar"); return }
+        if (!Settings.canDrawOverlays(this)) { toast("Izin 'tampil di atas aplikasi lain' belum diberikan"); return }
+        closeCaptureUi()
+        setOverlaysHidden(true)
+        recorder = TapRecorder(this, 300L) { taps, w, h -> finishRecord(slug, taps, w, h) }.also { it.show() }
+        toast("Buka layar game yang dituju, lalu ketuk titik yang mau diklik")
+    }
+
+    private fun finishRecord(slug: String, taps: List<ScriptStore.RecordedTap>?, w: Int, h: Int) {
+        recorder = null
+        try {
+            if (taps == null) toast("Dibatalkan")
+            else if (taps.isEmpty()) toast("Belum ada titik yang diketuk")
+            else {
+                val msg = ScriptStore(this).addTaps(slug, taps, w, h)
+                Bus.log("[$slug] $msg")
+                toast(msg)
+            }
+        } catch (e: Throwable) {
+            toast("Gagal menyimpan titik: ${e.message}")
+        } finally {
+            setOverlaysHidden(false)
+            showOverlay(slug)
+        }
+    }
+
     /** Tahap 1: tampilkan pil "Ambil layar". Pengguna membuka game ke layar yang dituju, lalu mengetuknya. */
     private fun beginRecapture(slug: String, id: String) {
         if (!active || capturer == null) { toast("Tekan Mulai dulu agar bisa mengambil gambar dari layar"); return }
@@ -294,6 +326,7 @@ class CaptureService : Service() {
     private fun closeCaptureUi() {
         prompt?.hide(); prompt = null
         cropper?.hide(); cropper = null
+        recorder?.hide(); recorder = null
         setOverlaysHidden(false)
     }
 
@@ -318,7 +351,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         for (e in engines) e?.stop()
-        prompt?.hide(); cropper?.hide(); overlay?.hide()
+        prompt?.hide(); cropper?.hide(); recorder?.hide(); overlay?.hide()
         bubble?.hide(); badge?.hide(); Bus.serviceActive = false; super.onDestroy()
     }
 }

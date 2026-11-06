@@ -93,6 +93,11 @@ class ScriptEngine(
         val startIdx = (cfg.startStep - 1).coerceIn(0, max(0, acts.length() - 1))
         var endIdx = if (cfg.endStep > 0) min(cfg.endStep, acts.length()) else acts.length()
         if (endIdx <= startIdx) endIdx = acts.length()   // rentang tidak masuk akal: pakai sampai langkah terakhir
+        if (acts.length() == 0) {
+            log("Script \"${root.optString("name")}\" belum punya langkah. Tambahkan lewat Atur langkah.")
+            running = false
+            return
+        }
         log("Mulai \"${root.optString("name")}\": ${acts.length()} langkah")
         if (startIdx > 0 || endIdx < acts.length())
             log((if (cfg.repeatRange) "Rentang langkah" else "Mode uji") + ": langkah ${startIdx + 1} sampai $endIdx")

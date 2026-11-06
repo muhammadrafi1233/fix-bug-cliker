@@ -195,6 +195,56 @@ class ScriptStore(private val ctx: Context) {
         return true
     }
 
+    /**
+     * Membuat script KOSONG langsung dari aplikasi (tanpa file). Langkah ditambahkan lewat "Atur langkah":
+     * ketuk titik di layar, klik koordinat manual, atau cari gambar. Ukuran layar acuan (ref_w/ref_h) diisi
+     * otomatis saat langkah pertama dibuat, mengikuti layar game saat itu.
+     */
+    fun createBlank(name: String): String {
+        val o = JSONObject()
+        o.put("name", name.trim())
+        o.put("app_name", "Dibuat di aplikasi")
+        o.put("version", "v0.0.1")
+        o.put("description", "Script dibuat langsung di aplikasi")
+        o.put("own_timing", true)
+        o.put("cycles", 1)
+        o.put("actions", JSONArray())
+        return addScript(o, "Script baru")
+    }
+
+    /** Satu ketukan hasil rekam di layar: posisi dalam piksel layar saat ini, [delayMs] = jeda setelah klik. */
+    class RecordedTap(val x: Int, val y: Int, val delayMs: Long)
+
+    /**
+     * Menambahkan klik koordinat dari ketukan yang direkam di layar ([screenW] x [screenH]) ke akhir script [slug].
+     * Script yang masih kosong dan belum punya ukuran layar acuan memakai ukuran layar saat merekam; selain itu
+     * titik diskalakan ke layar acuan script. Mengembalikan pesan hasil.
+     */
+    fun addTaps(slug: String, taps: List<RecordedTap>, screenW: Int, screenH: Int): String {
+        if (taps.isEmpty()) return "Tidak ada titik yang disimpan"
+        val root = load(slug)
+        val acts = root.getJSONArray("actions")
+        if (acts.length() == 0 && root.optInt("ref_w", 0) <= 0) {
+            root.put("ref_w", screenW); root.put("ref_h", screenH)
+            fileOf(slug).writeText(root.toString(2))
+        }
+        val ref = refSize(slug)
+        val fx = ref.first.toDouble() / screenW
+        val fy = ref.second.toDouble() / screenH
+        for (t in taps) {
+            val id = java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+            acts.put(JSONObject().apply {
+                put("id", id); put("type", "Single Click"); put("found_action", "Next")
+                put("x", (t.x * fx).roundToInt()); put("y", (t.y * fy).roundToInt())
+                put("delay", t.delayMs); put("area", 1)
+                put("click_loop_count", 1); put("r", 50.0); put("similar", 85)
+                put("not_found_action_repeat_count", 1); put("end_long_click_duration", 500)
+            })
+        }
+        fileOf(slug).writeText(root.toString(2))
+        return "${taps.size} langkah klik ditambahkan (total ${acts.length()})"
+    }
+
     private fun uniqueSlug(name: String): String {
         val base = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "script" }
         var s = base
@@ -266,6 +316,11 @@ class ScriptStore(private val ctx: Context) {
     fun saveCapture(slug: String, actionId: String, crop: Bitmap, region: Rect, screenW: Int, screenH: Int): String {
         val root = load(slug)
         val acts = root.getJSONArray("actions")
+        if (acts.length() == 0 && root.optInt("ref_w", 0) <= 0) {
+            // Script kosong buatan sendiri: ukuran layar acuan = layar saat gambar diambil.
+            root.put("ref_w", screenW); root.put("ref_h", screenH)
+            fileOf(slug).writeText(root.toString(2))
+        }
         val ref = refSize(slug)
         val fx = ref.first.toDouble() / screenW
         val fy = ref.second.toDouble() / screenH

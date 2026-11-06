@@ -34,6 +34,7 @@ class ActionsActivity : Activity() {
     private lateinit var countText: TextView
     private lateinit var btnAdd: AppButton
     private lateinit var btnAddImage: AppButton
+    private lateinit var btnRecord: AppButton
     private var root = JSONObject()
     private val acts = ArrayList<JSONObject>()
     private var broken = false
@@ -82,7 +83,9 @@ class ActionsActivity : Activity() {
         val actions = LinearLayout(this)
         actions.orientation = LinearLayout.VERTICAL
         actions.setPadding(dp(16), dp(8), dp(16), dp(8))
-        btnAdd = AppButton(this, "Klik koordinat", BtnStyle.PRIMARY, Icon.PLUS)
+        btnRecord = AppButton(this, "Ketuk titik di layar", BtnStyle.PRIMARY, Icon.TARGET)
+        btnRecord.setOnClickListener { requestRecord() }
+        btnAdd = AppButton(this, "Klik koordinat", BtnStyle.SECONDARY, Icon.PLUS)
         btnAdd.setOnClickListener { addClick() }
         btnAddImage = AppButton(this, "Cari gambar", BtnStyle.YELLOW, Icon.IMAGE)
         btnAddImage.setOnClickListener { requestCapture("") }
@@ -98,6 +101,7 @@ class ActionsActivity : Activity() {
         rowAdd.orientation = LinearLayout.HORIZONTAL
         rowAdd.addView(btnAdd, lp(0, WRAP, 1f, 0, 0, dp(6), 0))
         rowAdd.addView(btnAddImage, lp(0, WRAP, 1f, dp(6), 0, 0, 0))
+        actions.addView(btnRecord, lp(MATCH, WRAP, 0f, 0, 0, 0, dp(8)))
         actions.addView(rowAdd, lp(MATCH, WRAP))
         actions.addView(btnReset, lp(MATCH, WRAP, 0f, 0, dp(8), 0, 0))
         col.addView(actions, lp(MATCH, WRAP))
@@ -121,7 +125,7 @@ class ActionsActivity : Activity() {
         val et = text("Belum ada langkah", 16f, Palette.ink, true)
         et.gravity = Gravity.CENTER
         empty.addView(et, lp(WRAP, WRAP, 0f, 0, dp(12), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
-        val ed = text("Tambahkan klik koordinat, atau tekan Reset bawaan untuk memulihkan script asli.", 13f, Palette.inkSoft)
+        val ed = text("Tekan \"Ketuk titik di layar\" untuk membuat langkah langsung dari layar game, atau tambahkan klik koordinat / cari gambar. Reset bawaan memulihkan script asli.", 13f, Palette.inkSoft)
         ed.gravity = Gravity.CENTER
         empty.addView(ed, lp(WRAP, WRAP, 0f, 0, dp(4), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
         listBox.addView(empty, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -167,6 +171,23 @@ class ActionsActivity : Activity() {
         moveTaskToBack(true)
     }
 
+    /**
+     * Buat langkah klik langsung dari layar game: aplikasi minggir, lapisan ketuk muncul di atas game,
+     * pengguna mengetuk titik-titik yang mau diklik (berurutan), lalu menekan ✓ untuk menyimpan.
+     */
+    private fun requestRecord() {
+        if (broken) return
+        if (!Bus.serviceActive) {
+            Toast.makeText(this,
+                "Tekan Mulai di layar utama dulu (tombol melayang harus aktif), lalu coba lagi.", Toast.LENGTH_LONG).show()
+            return
+        }
+        startService(Intent(this, CaptureService::class.java)
+            .setAction(CaptureService.ACTION_RECORD)
+            .putExtra("slug", store.activeSlug))
+        moveTaskToBack(true)
+    }
+
     // ---------- data (logika tidak berubah) ----------
 
     private fun reload() {
@@ -181,6 +202,7 @@ class ActionsActivity : Activity() {
             Toast.makeText(this, "Script tidak bisa dibaca. Tekan Reset bawaan untuk memulihkan.", Toast.LENGTH_LONG).show()
         }
         btnAdd.isEnabled = !broken
+        btnRecord.isEnabled = !broken
         btnAddImage.isEnabled = !broken
         refresh()
     }
