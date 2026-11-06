@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema dasar bergaya RAFI HAYDAY: krem hangat, bilah status hijau rumput. Dipakai semua Activity dan dialog. -->
+    <style name="Theme.RafiAutomatic" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/rh_green</item>
+        <item name="android:colorPrimaryDark">@color/rh_green</item>
+        <item name="android:colorAccent">@color/rh_green</item>
+        <item name="android:colorControlActivated">@color/rh_green</item>
+        <item name="android:windowBackground">@color/rh_cream</item>
+        <item name="android:statusBarColor">@color/rh_green</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/rh_ink</item>
+    </style>
+
+    <!-- Splash: warna langit sejak frame pertama supaya tidak ada kilatan putih sebelum pemandangan ladang tergambar. -->
+    <style name="Theme.RafiAutomatic.Splash" parent="Theme.RafiAutomatic">
+        <item name="android:windowBackground">@color/rh_sky_mid</item>
+        <item name="android:statusBarColor">@color/rh_sky</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+    </style>
+</resources>
